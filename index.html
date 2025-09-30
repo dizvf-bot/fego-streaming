@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fego Streaming</title>
+  <link rel="icon" type="image/x-icon" href="Images/logo.ico">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <img src="Images/logo.ico" alt="Fego Logo" width="40" height="40">
+        <h1>Fego Streaming</h1>
+      </div>
+      <nav>
+        <button id="theme-toggle" class="theme-toggle" title="Switch to Dark Mode">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+        <button id="upload-btn">Upload Video</button>
+        <button id="stream-btn">Share Screen</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="video-section">
+        <div class="video-container">
+          <div id="video-placeholder">
+            <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="#6441A5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M10 8L16 12L10 16V8Z" fill="#6441A5" stroke="#6441A5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p>Upload a video or start streaming</p>
+          </div>
+          <video id="video-player" controls></video>
+          <div class="video-info">
+            <h2 id="video-title">No video playing</h2>
+            <div class="video-stats">
+              <div id="view-count">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M1 12S5 4 12 4s11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>0 viewers</span>
+              </div>
+              <div id="coin-count">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                  <path d="M12 7v10M9 10l3-3 3 3M9 14l3 3 3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>0 BabaCoins</span>
+              </div>
+              <div id="stream-indicator" class="hidden">
+                <span class="pulse"></span>
+                <span>LIVE</span>
+              </div>
+            </div>
+          </div>
+          <div class="video-controls">
+            <button id="stop-btn" disabled>Stop Session</button>
+            <div class="chat-rate-control">
+              <label for="chat-rate">Chat Speed:</label>
+              <input type="range" id="chat-rate" min="1" max="10" value="5">
+              <span id="chat-rate-value">5</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="chat-section" id="main-chat-container">
+        <div class="chat-header">
+          <h3>Live Chat</h3>
+          <button id="popout-chat-btn" title="Pop out chat">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 3h6v6M14 10l7-7M10 21H3v-7M3 14l7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input">
+          <input type="text" placeholder="Say something..." disabled>
+          <button disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="upload-modal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h2>Upload Video</h2>
+      <form id="upload-form">
+        <div class="form-group">
+          <label for="video-title-input">Video Title</label>
+          <input type="text" id="video-title-input" placeholder="Enter a title for your video" required>
+        </div>
+        <div class="form-group">
+          <label for="video-file">Video File</label>
+          <input type="file" id="video-file" accept="video/*" required>
+        </div>
+        <button type="submit">Upload</button>
+      </form>
+    </div>
+  </div>
+
+  <input type="file" id="hidden-file-input" accept="video/*" style="display: none;">
+  <script src="script.js"></script>
+</body>
+</html>
