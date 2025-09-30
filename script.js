@@ -14,7 +14,6 @@ document.addEventListener('DOMContentLoaded', function() {
   const uploadForm = document.getElementById('upload-form');
   const videoTitleInput = document.getElementById('video-title-input');
   const videoFileInput = document.getElementById('video-file');
-  const hiddenFileInput = document.getElementById('hidden-file-input');
   const chatMessages = document.getElementById('chat-messages');
   const chatRateSlider = document.getElementById('chat-rate');
   const chatRateValue = document.getElementById('chat-rate-value');
@@ -35,12 +34,13 @@ document.addEventListener('DOMContentLoaded', function() {
   let videoFrameCanvas = document.createElement('canvas');
   let videoFrameContext = videoFrameCanvas.getContext('2d');
   let lastAnalysisTime = 0;
-  let analysisInterval = 15000; // Analyze every 15 seconds
+  let analysisInterval = 20000; // Analyze every 20 seconds
   let videoAnalysisInterval;
   let isDarkMode = localStorage.getItem('darkMode') === 'true';
   let aiMessagesQueue = []; // Queue for AI-generated messages
+  let conversationContext = []; // Store what AI has seen
 
-  // Gemini API configuration - Using the correct format
+  // Gemini API configuration
   const GEMINI_API_KEY = 'AIzaSyDLmGMBnsLanDPKHqcDeWds4C88P4ri29o';
   const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
 
@@ -319,6 +319,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     totalCoins = 0;
     updateCoinCount();
+    conversationContext = []; // Reset conversation context
   }
 
   function stopChat() {
@@ -375,13 +376,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Otherwise generate regular chat message
     const rand = Math.random();
-    let messageType, messageContent;
+    let messageType, messageContent, donationAmount;
     
     if (rand < 0.10) {
       messageType = 'donation';
-      const amount = Math.floor(Math.random() * 500) + 10;
+      donationAmount = Math.floor(Math.random() * 500) + 10;
       messageContent = `Thank you for the content! Keep it up!`;
-      const donationAmount = amount;
       totalCoins += donationAmount;
       updateCoinCount();
     } else if (rand < 0.30) {
@@ -395,10 +395,10 @@ document.addEventListener('DOMContentLoaded', function() {
       messageContent = chatMessageTemplates[Math.floor(Math.random() * chatMessageTemplates.length)];
     }
     
-    sendChatMessage(messageContent, messageType);
+    sendChatMessage(messageContent, messageType, donationAmount);
   }
 
-  function sendChatMessage(messageContent, messageType) {
+  function sendChatMessage(messageContent, messageType, donationAmount) {
     let username;
     do {
       username = chatUsernames[Math.floor(Math.random() * chatUsernames.length)];
@@ -430,12 +430,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     contentEl.appendChild(messageTextEl);
     
-    if (messageType === 'donation') {
+    if (messageType === 'donation' && donationAmount) {
       const donationEl = document.createElement('div');
       donationEl.className = 'chat-donation';
-      const amount = Math.floor(Math.random() * 500) + 10;
       donationEl.innerHTML = `
-        <span class="donation-amount">${amount} BabaCoins</span> donated!
+        <span class="donation-amount">${donationAmount} BabaCoins</span> donated!
       `;
       contentEl.appendChild(donationEl);
     }
@@ -577,15 +576,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     videoAnalysisInterval = setInterval(analyzeVideoFrame, analysisInterval);
     
-    // Initial analysis after 2 seconds
-    setTimeout(analyzeVideoFrame, 2000);
+    // Initial analysis after 3 seconds
+    setTimeout(analyzeVideoFrame, 3000);
   }
   
   async function analyzeVideoFrame() {
     if (!isPlaying || videoPlayer.paused || videoPlayer.ended) return;
     
     const now = Date.now();
-    if (now - lastAnalysisTime < 10000) return; // Minimum 10 seconds between analyses
+    if (now - lastAnalysisTime < 15000) return; // Minimum 15 seconds between analyses
     lastAnalysisTime = now;
     
     try {
@@ -600,16 +599,16 @@ document.addEventListener('DOMContentLoaded', function() {
       );
       
       // Convert to base64 JPEG
-      const imageDataUrl = videoFrameCanvas.toDataURL('image/jpeg', 0.8);
+      const imageDataUrl = videoFrameCanvas.toDataURL('image/jpeg', 0.7);
       const base64Image = imageDataUrl.split(',')[1];
       
       console.log('📤 Sending to Gemini AI...');
       
-      // Call Gemini API
-      const messages = await callGeminiAPI(base64Image);
+      // Call Gemini API with conversation context
+      const messages = await chatWithGemini(base64Image);
       
       if (messages && messages.length > 0) {
-        console.log('✅ AI generated', messages.length, 'chat messages');
+        console.log('✅ AI generated', messages.length, 'chat messages:', messages);
         // Add messages to queue
         aiMessagesQueue.push(...messages);
       }
@@ -618,30 +617,47 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  async function callGeminiAPI(base64Image) {
+  function buildPrompt(base64Image) {
+    // Build context from recent observations
+    const contextText = conversationContext.slice(-3).join('\n');
+    
+    const prompt = `You are a group of excited viewers watching a live stream. You've been watching for a while and commenting on what you see.
+
+${contextText ? `Recent observations:\n${contextText}\n\n` : ''}
+
+Look at this new frame from the stream and generate 2-4 SHORT, natural chat messages that viewers would send. Each message should be:
+- Super casual and conversational (like real Twitch/YouTube chat)
+- 1 sentence maximum
+- React to specific things you see in the image
+- Mix of excitement, questions, and observations
+- Use casual language, abbreviations, emojis sometimes
+
+Examples of GOOD messages:
+"wait is that a gaming chair? nice"
+"yo the lighting setup looks clean 🔥"
+"what keyboard is that?"
+"ngl this is pretty cool"
+"bro your desktop wallpaper goes hard"
+
+DO NOT:
+- Write long messages
+- Be too formal or professional
+- Repeat the same observations
+- Use overly excited language in every message
+
+Return ONLY a JSON array of 2-4 messages, nothing else:
+["message1", "message2", "message3"]`;
+
+    return prompt;
+  }
+  
+  async function chatWithGemini(base64Image) {
     try {
-      const requestBody = {
+      const payload = {
         contents: [{
           parts: [
             {
-              text: `You are watching a live stream. Analyze this frame and generate 2-4 realistic chat messages that viewers might send. 
-
-The messages should be:
-- Natural and conversational (like real viewers commenting)
-- Relevant to what you see in the image
-- Varied (mix of reactions, questions, observations)
-- Short and casual (1-2 sentences each)
-
-Examples of good messages:
-"Is that a new keyboard? Looks nice!"
-"What software are you using for that?"
-"The lighting in your setup is perfect!"
-"I've been wanting to learn this, thanks for showing!"
-
-Format your response as a JSON array of strings, like:
-["message 1", "message 2", "message 3"]
-
-Only return the JSON array, nothing else.`
+              text: buildPrompt(base64Image)
             },
             {
               inline_data: {
@@ -653,7 +669,8 @@ Only return the JSON array, nothing else.`
         }],
         generationConfig: {
           temperature: 0.9,
-          maxOutputTokens: 200
+          maxOutputTokens: 200,
+          topP: 0.95
         }
       };
 
@@ -663,29 +680,30 @@ Only return the JSON array, nothing else.`
           'Content-Type': 'application/json',
           'x-goog-api-key': GEMINI_API_KEY
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(payload)
       });
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Gemini API error:', response.status, errorText);
+        console.error('❌ Gemini API error:', response.status, errorText);
         return null;
       }
       
       const data = await response.json();
       
       if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-        console.error('Invalid API response format:', data);
+        console.error('❌ Invalid API response format:', data);
         return null;
       }
       
-      const textResponse = data.candidates[0].content.parts[0].text.trim();
-      console.log('🤖 Gemini response:', textResponse);
+      const reply = data.candidates[0].content.parts[0].text.trim();
+      console.log('🤖 Gemini raw response:', reply);
       
       // Parse the JSON response
       try {
+        let jsonText = reply;
+        
         // Remove markdown code blocks if present
-        let jsonText = textResponse;
         if (jsonText.includes('```json')) {
           jsonText = jsonText.split('```json')[1].split('```')[0].trim();
         } else if (jsonText.includes('```')) {
@@ -695,25 +713,37 @@ Only return the JSON array, nothing else.`
         const messages = JSON.parse(jsonText);
         
         if (Array.isArray(messages) && messages.length > 0) {
+          // Add these observations to conversation context
+          conversationContext.push(`Viewers commented: ${messages.join(' | ')}`);
+          if (conversationContext.length > 5) {
+            conversationContext.shift(); // Keep last 5 observations
+          }
+          
           return messages;
         } else {
-          console.warn('AI response was not an array:', messages);
+          console.warn('⚠️ AI response was not a valid array');
           return null;
         }
       } catch (parseError) {
-        console.error('Failed to parse AI response as JSON:', parseError);
-        console.log('Raw response:', textResponse);
+        console.error('❌ Failed to parse AI response as JSON:', parseError);
+        console.log('Raw response text:', reply);
         
         // Fallback: try to extract messages from text
-        const lines = textResponse.split('\n').filter(line => line.trim().length > 0);
+        const lines = reply.split('\n')
+          .filter(line => line.trim().length > 0)
+          .map(line => line.replace(/^[-*"'\d.[\]]\s*/, '').replace(/["',]$/g, '').trim())
+          .filter(line => line.length > 5 && line.length < 150);
+        
         if (lines.length > 0) {
-          return lines.slice(0, 4).map(line => line.replace(/^[-*"'\d.]\s*/, '').replace(/["']$/g, '').trim());
+          const extractedMessages = lines.slice(0, 4);
+          console.log('📝 Extracted messages from text:', extractedMessages);
+          return extractedMessages;
         }
         
         return null;
       }
     } catch (error) {
-      console.error('Error calling Gemini API:', error);
+      console.error('❌ Error calling Gemini API:', error);
       return null;
     }
   }
