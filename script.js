@@ -39,10 +39,27 @@ document.addEventListener('DOMContentLoaded', function() {
   let isDarkMode = localStorage.getItem('darkMode') === 'true';
   let aiMessagesQueue = []; // Queue for AI-generated messages
   let conversationContext = []; // Store what AI has seen
+  let streamStartTime = null; // Track when stream started
+  let aiAnalysisCount = 0; // Track number of analyses
 
   // Gemini API configuration
   const GEMINI_API_KEY = 'AIzaSyDLmGMBnsLanDPKHqcDeWds4C88P4ri29o';
   const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
+
+  // Platform knowledge for AI
+  const PLATFORM_CONTEXT = {
+    platform: "Fego",
+    description: "Fego is a live streaming platform where creators share content and viewers can support them",
+    currency: "BabaCoins",
+    currencyDescription: "BabaCoins are the virtual currency on Fego that viewers use to donate to streamers they enjoy",
+    culture: "Fego has a friendly, supportive community that loves to engage with streamers through chat and donations",
+    features: [
+      "Live streaming of gameplay, tutorials, creative work, and screen sharing",
+      "Real-time chat where viewers interact with streamers",
+      "BabaCoin donations to support favorite creators",
+      "Viewer counts showing stream popularity"
+    ]
+  };
 
   // Apply dark mode on load
   if (isDarkMode) {
@@ -320,6 +337,8 @@ document.addEventListener('DOMContentLoaded', function() {
     totalCoins = 0;
     updateCoinCount();
     conversationContext = []; // Reset conversation context
+    streamStartTime = Date.now(); // Track stream start time
+    aiAnalysisCount = 0; // Reset analysis count
   }
 
   function stopChat() {
@@ -588,7 +607,8 @@ document.addEventListener('DOMContentLoaded', function() {
     lastAnalysisTime = now;
     
     try {
-      console.log('🎥 Capturing video frame for AI analysis...');
+      aiAnalysisCount++; // Increment analysis counter
+      console.log(`🎥 [Analysis #${aiAnalysisCount}] Capturing video frame for AI analysis...`);
       
       // Draw current video frame to canvas
       videoFrameContext.drawImage(
@@ -602,10 +622,13 @@ document.addEventListener('DOMContentLoaded', function() {
       const imageDataUrl = videoFrameCanvas.toDataURL('image/jpeg', 0.7);
       const base64Image = imageDataUrl.split(',')[1];
       
-      console.log('📤 Sending to Gemini AI...');
+      // Calculate stream duration
+      const streamDuration = Math.floor((now - streamStartTime) / 1000 / 60); // minutes
       
-      // Call Gemini API with conversation context
-      const messages = await chatWithGemini(base64Image);
+      console.log(`📤 Sending to Gemini AI... (Stream: ${streamDuration}min, Viewers: ${viewerCount}, Coins: ${totalCoins})`);
+      
+      // Call Gemini API with full context
+      const messages = await chatWithGemini(base64Image, streamDuration);
       
       if (messages && messages.length > 0) {
         console.log('✅ AI generated', messages.length, 'chat messages:', messages);
@@ -617,47 +640,72 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  function buildPrompt(base64Image) {
+  function buildPrompt(base64Image, streamDuration) {
     // Build context from recent observations
-    const contextText = conversationContext.slice(-3).join('\n');
+    const recentContext = conversationContext.slice(-5).map((ctx, idx) => `  ${idx + 1}. ${ctx}`).join('\n');
     
-    const prompt = `You are a group of excited viewers watching a live stream. You've been watching for a while and commenting on what you see.
+    // Determine if this is early, mid, or late in stream
+    let streamPhase = "just started";
+    if (streamDuration > 30) streamPhase = "been going for a while";
+    else if (streamDuration > 10) streamPhase = "getting into it";
+    
+    const prompt = `PLATFORM CONTEXT:
+You are viewers on Fego, a live streaming platform similar to Twitch. Key facts:
+- Platform name: Fego (pronounced "FEE-go")
+- Currency: BabaCoins - virtual currency viewers donate to support streamers
+- Culture: Friendly, supportive community that loves engaging through chat
+- Features: Live streaming, real-time chat, BabaCoin donations, viewer counts
 
-${contextText ? `Recent observations:\n${contextText}\n\n` : ''}
+CURRENT STREAM STATUS:
+- Stream has ${streamPhase} (${streamDuration} minutes)
+- Current viewers: ${viewerCount}
+- Total BabaCoins donated: ${totalCoins}
+- This is analysis #${aiAnalysisCount}
 
-Look at this new frame from the stream and generate 2-4 SHORT, natural chat messages that viewers would send. Each message should be:
-- Super casual and conversational (like real Twitch/YouTube chat)
-- 1 sentence maximum
-- React to specific things you see in the image
-- Mix of excitement, questions, and observations
-- Use casual language, abbreviations, emojis sometimes
+YOUR MEMORY (Recent observations from this stream):
+${recentContext || '  (This is your first look at the stream)'}
 
-Examples of GOOD messages:
-"wait is that a gaming chair? nice"
-"yo the lighting setup looks clean 🔥"
-"what keyboard is that?"
-"ngl this is pretty cool"
-"bro your desktop wallpaper goes hard"
+YOUR ROLE:
+You are regular Fego viewers in the chat. You've been watching and commenting naturally. Generate 2-4 SHORT chat messages that viewers would realistically send right now.
 
-DO NOT:
-- Write long messages
-- Be too formal or professional
-- Repeat the same observations
-- Use overly excited language in every message
+IMPORTANT RULES:
+✓ Keep messages under 15 words each
+✓ Be casual and natural (like real stream chat)
+✓ Reference specific things you see in the current frame
+✓ Mix reactions, questions, and observations
+✓ Sometimes mention BabaCoins or Fego culture naturally
+✓ Build on your previous observations (use your memory)
+✓ Vary your tone (excited, curious, impressed, casual)
 
-Return ONLY a JSON array of 2-4 messages, nothing else:
+EXAMPLES OF GOOD MESSAGES:
+"that setup is actually clean, might send some BabaCoins"
+"wait how long has this stream been going?"
+"yo Fego recommendations brought me here, no regrets"
+"the lighting setup tho 🔥"
+"anyone know what software that is?"
+"been watching for ${streamDuration} mins, this is quality content"
+"${viewerCount} viewers rn, this bout to blow up"
+
+BAD MESSAGES (Don't do this):
+❌ Long explanatory messages
+❌ Overly formal language
+❌ Repeating exact same observations
+❌ Mentioning you're an AI or that you're analyzing
+
+RESPOND WITH:
+Only a JSON array of 2-4 messages, nothing else:
 ["message1", "message2", "message3"]`;
 
     return prompt;
   }
   
-  async function chatWithGemini(base64Image) {
+  async function chatWithGemini(base64Image, streamDuration) {
     try {
       const payload = {
         contents: [{
           parts: [
             {
-              text: buildPrompt(base64Image)
+              text: buildPrompt(base64Image, streamDuration)
             },
             {
               inline_data: {
@@ -669,8 +717,9 @@ Return ONLY a JSON array of 2-4 messages, nothing else:
         }],
         generationConfig: {
           temperature: 0.9,
-          maxOutputTokens: 200,
-          topP: 0.95
+          maxOutputTokens: 250,
+          topP: 0.95,
+          topK: 40
         }
       };
 
@@ -713,11 +762,16 @@ Return ONLY a JSON array of 2-4 messages, nothing else:
         const messages = JSON.parse(jsonText);
         
         if (Array.isArray(messages) && messages.length > 0) {
-          // Add these observations to conversation context
-          conversationContext.push(`Viewers commented: ${messages.join(' | ')}`);
-          if (conversationContext.length > 5) {
-            conversationContext.shift(); // Keep last 5 observations
+          // Store what the AI observed this time (for memory)
+          const observation = `[${streamDuration}min] AI saw and commented: ${messages.join(' | ')}`;
+          conversationContext.push(observation);
+          
+          // Keep memory manageable (last 8 observations)
+          if (conversationContext.length > 8) {
+            conversationContext.shift();
           }
+          
+          console.log('💾 Updated AI memory. Total observations:', conversationContext.length);
           
           return messages;
         } else {
@@ -737,6 +791,14 @@ Return ONLY a JSON array of 2-4 messages, nothing else:
         if (lines.length > 0) {
           const extractedMessages = lines.slice(0, 4);
           console.log('📝 Extracted messages from text:', extractedMessages);
+          
+          // Still store in memory even if parsing failed
+          const observation = `[${streamDuration}min] AI commented: ${extractedMessages.join(' | ')}`;
+          conversationContext.push(observation);
+          if (conversationContext.length > 8) {
+            conversationContext.shift();
+          }
+          
           return extractedMessages;
         }
         
