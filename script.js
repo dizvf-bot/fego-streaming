@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let isDarkMode = localStorage.getItem('darkMode') === 'true';
 
   // Gemini API configuration
-  const GEMINI_API_KEY = 'AIzaSyDzEOzLmoojB88PUwpXfGN4_IE1hFJqTDQ';
+  const GEMINI_API_KEY = 'AIzaSyDLmGMBnsLanDPKHqcDeWds4C88P4ri29o';
   const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   // Apply dark mode on load if it's saved in localStorage
