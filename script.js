@@ -26,30 +26,31 @@ document.addEventListener('DOMContentLoaded', function() {
   let isStreaming = false;
   let isPlaying = false;
   let chatInterval;
-  let chatRate = 5; // Default rate (messages per minute)
+  let chatRate = 5;
   let viewerCount = 0;
   let totalCoins = 0;
   let isPoppedOut = false;
   let poppedOutWindow = null;
-  let usedNames = new Set(); // Keep track of used names
+  let usedNames = new Set();
   let videoFrameCanvas = document.createElement('canvas');
   let videoFrameContext = videoFrameCanvas.getContext('2d');
   let lastAnalysisTime = 0;
-  let analysisInterval = 10000; // Analyze video every 10 seconds
+  let analysisInterval = 15000; // Analyze every 15 seconds
   let videoAnalysisInterval;
   let isDarkMode = localStorage.getItem('darkMode') === 'true';
+  let aiMessagesQueue = []; // Queue for AI-generated messages
 
-  // Gemini API configuration
+  // Gemini API configuration - Using the correct format
   const GEMINI_API_KEY = 'AIzaSyDLmGMBnsLanDPKHqcDeWds4C88P4ri29o';
-  const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
 
-  // Apply dark mode on load if it's saved in localStorage
+  // Apply dark mode on load
   if (isDarkMode) {
     document.body.classList.add('dark-mode');
     updateThemeToggleIcon();
   }
 
-  // Chat usernames and profile pictures
+  // Chat usernames
   const chatUsernames = [
     'GamerPro99', 'PixelWarrior', 'StreamQueen', 'NightOwlGaming', 'EpicViewerXX',
     'SilverArrow', 'CosmicGamer', 'MoonlightPlayer', 'SunriseStreamer', 'StardustViewer',
@@ -62,13 +63,11 @@ document.addEventListener('DOMContentLoaded', function() {
     'DawnBreaker', 'TwilightWalker', 'SunsetGazer', 'MoonlitSky', 'StarryNight'
   ];
 
-  // Chat message templates
+  // Generic chat templates (used when AI is not analyzing)
   const chatMessageTemplates = [
     "This is so interesting to watch!",
     "I've never seen anything like this before.",
     "Wow, look at that!",
-    "What's that in the background?",
-    "I wonder what will happen next?",
     "This is great content!",
     "I'm learning so much from this stream.",
     "This is exactly what I was looking for!",
@@ -76,49 +75,32 @@ document.addEventListener('DOMContentLoaded', function() {
     "Does anyone else find this fascinating?",
     "I could watch this all day.",
     "This is incredibly well done.",
-    "I have a question about what you just showed!",
     "That part was really impressive.",
-    "How did you learn to do that?",
     "This is my first time watching your stream, and I'm impressed!",
-    "The way you explained that was really clear.",
     "I'm sharing this with my friends right now.",
-    "I didn't expect to see that!",
-    "Can you go into more detail about that last part?",
-    "That's a really unique approach.",
     "I appreciate how thorough this is.",
     "This is much better than other streams I've watched.",
     "Your presentation style is engaging.",
     "I'm taking notes on everything you're showing.",
-    "That's a clever solution to that problem.",
     "I never thought of it that way before.",
-    "The visuals here are stunning!",
     "You make this look so easy!",
-    "That's a helpful tip, thanks for sharing!",
     "I'm definitely coming back for more streams.",
     "This content is so valuable.",
     "You've got a new follower today!",
-    "I've been waiting for someone to cover this topic.",
     "The pace of this stream is perfect.",
-    "I like how you're explaining as you go.",
     "This is exactly what I needed to see today.",
     "Your passion for this subject really shows.",
-    "I'm impressed by your knowledge on this.",
     "Looking forward to your next stream already!"
   ];
 
   const reactions = [
     "Did you see that? Amazing!",
     "Woah! That just happened!",
-    "I'm seeing something right now!",
-    "That's incredible technique!",
-    "Look at those skills on display!",
-    "That's one way to do it!",
-    "Never would have thought of that approach!",
+    "That's incredible!",
+    "Look at that!",
     "That's actually genius!",
-    "I'm taking notes on that technique.",
     "Mind. Blown.",
     "That's so creative!",
-    "That move was perfectly executed!",
     "I need to try that sometime.",
     "What a brilliant solution!",
     "I'm impressed by how smooth that was."
@@ -131,15 +113,10 @@ document.addEventListener('DOMContentLoaded', function() {
     "What equipment are you using?",
     "Where did you learn these techniques?",
     "Will you be covering more advanced topics in future streams?",
-    "Have you tried the alternative approach?",
-    "What's your opinion on the latest developments in this field?",
     "Could you explain that last part again?",
     "Are there any resources you recommend for learning more?",
     "How often do you stream?",
-    "What's the biggest challenge you've faced with this?",
-    "Do you collaborate with other streamers?",
-    "What's your favorite part about streaming?",
-    "How do you stay motivated to keep improving?"
+    "What's your favorite part about streaming?"
   ];
 
   // Event listeners
@@ -152,14 +129,12 @@ document.addEventListener('DOMContentLoaded', function() {
   popoutChatBtn.addEventListener('click', togglePopoutChat);
   themeToggleBtn.addEventListener('click', toggleDarkMode);
 
-  // Add new functions for theme toggling
   function toggleDarkMode() {
     isDarkMode = !isDarkMode;
     document.body.classList.toggle('dark-mode', isDarkMode);
     localStorage.setItem('darkMode', isDarkMode);
     updateThemeToggleIcon();
     
-    // Update popped out window if it exists
     if (isPoppedOut && poppedOutWindow && !poppedOutWindow.closed) {
       if (isDarkMode) {
         poppedOutWindow.document.body.classList.add('dark-mode');
@@ -231,15 +206,11 @@ document.addEventListener('DOMContentLoaded', function() {
     stopBtn.textContent = 'Stop Session';
     streamBtn.textContent = 'Start Streaming';
     
-    // Show view count, hide stream indicator
     viewCount.style.display = 'flex';
     streamIndicator.classList.add('hidden');
     
-    // Start generating chat
     startChat();
     startViewerCount();
-    
-    // Set up video analysis
     setupVideoAnalysis();
   }
 
@@ -256,7 +227,6 @@ document.addEventListener('DOMContentLoaded', function() {
       stopSession();
     }
     
-    // Request screen capture instead of camera access
     navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
       .then(function(stream) {
         videoPlayer.srcObject = stream;
@@ -272,15 +242,11 @@ document.addEventListener('DOMContentLoaded', function() {
         stopBtn.textContent = 'Stop Streaming';
         streamBtn.textContent = 'Stop Streaming';
         
-        // Hide view count, show stream indicator
         viewCount.style.display = 'none';
         streamIndicator.classList.remove('hidden');
         
-        // Start generating chat
         startChat();
         startViewerCount();
-        
-        // Set up video analysis
         setupVideoAnalysis();
       })
       .catch(function(err) {
@@ -306,11 +272,9 @@ document.addEventListener('DOMContentLoaded', function() {
     stopBtn.disabled = true;
     streamBtn.textContent = 'Start Streaming';
     
-    // Reset UI
     viewCount.style.display = 'flex';
     streamIndicator.classList.add('hidden');
     
-    // Stop chat and viewer count
     stopChat();
     stopViewerCount();
   }
@@ -331,15 +295,12 @@ document.addEventListener('DOMContentLoaded', function() {
     isPlaying = false;
     stopBtn.disabled = true;
     
-    // Reset UI
     viewCount.querySelector('span').textContent = '0 viewers';
     coinCount.querySelector('span').textContent = '0 BabaCoins';
     
-    // Stop chat and viewer count
     stopChat();
     stopViewerCount();
     
-    // Stop video analysis
     if (videoAnalysisInterval) {
       clearInterval(videoAnalysisInterval);
       videoAnalysisInterval = null;
@@ -347,18 +308,15 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function startChat() {
-    stopChat(); // Clear any existing interval
+    stopChat();
     
-    // Calculate interval based on chat rate (messages per minute)
     const intervalMs = (60 * 1000) / chatRate;
     
     chatInterval = setInterval(generateChatMessage, intervalMs);
-    // Generate initial messages right away
     for (let i = 0; i < 3; i++) {
       setTimeout(() => generateChatMessage(), i * 500);
     }
 
-    // Reset BabaCoins counter
     totalCoins = 0;
     updateCoinCount();
   }
@@ -369,8 +327,8 @@ document.addEventListener('DOMContentLoaded', function() {
       chatInterval = null;
     }
     
-    // Clear chat messages
     chatMessages.innerHTML = '';
+    aiMessagesQueue = [];
   }
 
   function updateChatRate() {
@@ -378,18 +336,16 @@ document.addEventListener('DOMContentLoaded', function() {
     chatRateValue.textContent = chatRate;
     
     if (isPlaying) {
-      startChat(); // Restart chat with new rate
+      startChat();
     }
   }
 
   function startViewerCount() {
-    // Reset viewer count
     viewerCount = Math.floor(Math.random() * 50) + 10;
     updateViewerCount();
     
-    // Simulate viewer count changes
     viewerCountInterval = setInterval(() => {
-      const change = Math.floor(Math.random() * 5) - 2; // -2 to +2 viewers
+      const change = Math.floor(Math.random() * 5) - 2;
       viewerCount = Math.max(1, viewerCount + change);
       updateViewerCount();
     }, 5000);
@@ -410,57 +366,60 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function generateChatMessage() {
-    // Determine message type with probabilities
+    // Check if there are AI-generated messages in the queue
+    if (aiMessagesQueue.length > 0) {
+      const aiMessage = aiMessagesQueue.shift();
+      sendChatMessage(aiMessage, 'ai');
+      return;
+    }
+
+    // Otherwise generate regular chat message
     const rand = Math.random();
     let messageType, messageContent;
     
-    if (rand < 0.10) { // 10% chance for donation
+    if (rand < 0.10) {
       messageType = 'donation';
-      const amount = Math.floor(Math.random() * 500) + 10; // 10-500 BabaCoins
+      const amount = Math.floor(Math.random() * 500) + 10;
       messageContent = `Thank you for the content! Keep it up!`;
       const donationAmount = amount;
       totalCoins += donationAmount;
       updateCoinCount();
-    } else if (rand < 0.30) { // 20% chance for question
+    } else if (rand < 0.30) {
       messageType = 'question';
       messageContent = questions[Math.floor(Math.random() * questions.length)];
-    } else if (rand < 0.50) { // 20% chance for reaction
+    } else if (rand < 0.50) {
       messageType = 'reaction';
       messageContent = reactions[Math.floor(Math.random() * reactions.length)];
-    } else { // 50% chance for regular message
+    } else {
       messageType = 'regular';
       messageContent = chatMessageTemplates[Math.floor(Math.random() * chatMessageTemplates.length)];
     }
     
-    // Create a unique username
+    sendChatMessage(messageContent, messageType);
+  }
+
+  function sendChatMessage(messageContent, messageType) {
     let username;
     do {
       username = chatUsernames[Math.floor(Math.random() * chatUsernames.length)];
     } while (usedNames.has(username) && usedNames.size < chatUsernames.length);
     usedNames.add(username);
     
-    // If all names have been used, reset the set
     if (usedNames.size >= chatUsernames.length * 0.8) {
       usedNames.clear();
     }
     
-    // Create chat message element
     const messageEl = document.createElement('div');
     messageEl.className = 'chat-message';
     
-    // Create avatar
     const avatarEl = document.createElement('div');
     avatarEl.className = 'chat-avatar';
-    
-    // Generate a profile picture (SVG avatar)
     const avatarSVG = generateAvatar(username);
     avatarEl.innerHTML = avatarSVG;
     
-    // Create message content
     const contentEl = document.createElement('div');
     contentEl.className = 'chat-content';
     
-    // Create username and message
     const messageTextEl = document.createElement('div');
     const usernameEl = document.createElement('span');
     usernameEl.className = 'chat-username';
@@ -471,21 +430,19 @@ document.addEventListener('DOMContentLoaded', function() {
     
     contentEl.appendChild(messageTextEl);
     
-    // Add donation if applicable
     if (messageType === 'donation') {
       const donationEl = document.createElement('div');
       donationEl.className = 'chat-donation';
+      const amount = Math.floor(Math.random() * 500) + 10;
       donationEl.innerHTML = `
-        <span class="donation-amount">${donationAmount} BabaCoins</span> donated!
+        <span class="donation-amount">${amount} BabaCoins</span> donated!
       `;
       contentEl.appendChild(donationEl);
     }
     
-    // Assemble message
     messageEl.appendChild(avatarEl);
     messageEl.appendChild(contentEl);
     
-    // Add to chat in main window and popped out window if exists
     chatMessages.appendChild(messageEl);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
@@ -498,12 +455,9 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function generateAvatar(username) {
-    // Generate a unique color based on username
     const hue = (username.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360);
     const bgColor = `hsl(${hue}, 70%, 60%)`;
     const textColor = 'white';
-    
-    // Get initials (up to 2 characters)
     const initials = username.substring(0, 2).toUpperCase();
     
     return `
@@ -516,12 +470,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function togglePopoutChat() {
     if (isPoppedOut) {
-      // Check if window still exists and isn't closed
       if (poppedOutWindow && !poppedOutWindow.closed) {
         poppedOutWindow.close();
       }
       
-      // Return chat to main window
       mainChatContainer.classList.remove('hidden');
       popoutChatBtn.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -530,11 +482,9 @@ document.addEventListener('DOMContentLoaded', function() {
       `;
       isPoppedOut = false;
     } else {
-      // Create pop-out window
       poppedOutWindow = window.open('', 'FegoChat', 'width=350,height=600,resizable=yes');
       
       if (poppedOutWindow) {
-        // Write content to the new window
         poppedOutWindow.document.write(`
           <!DOCTYPE html>
           <html lang="en">
@@ -575,19 +525,16 @@ document.addEventListener('DOMContentLoaded', function() {
           </html>
         `);
         
-        // Copy existing chat messages to the popped-out window
         const poppedOutChatMessages = poppedOutWindow.document.getElementById('chat-messages');
         chatMessages.childNodes.forEach(node => {
           const clonedNode = node.cloneNode(true);
           poppedOutChatMessages.appendChild(clonedNode);
         });
         
-        // Add event listener to the pop in button
         poppedOutWindow.document.getElementById('popin-chat-btn').addEventListener('click', function() {
           togglePopoutChat();
         });
         
-        // Update when the popped out window is closed directly
         poppedOutWindow.addEventListener('beforeunload', function() {
           if (isPoppedOut) {
             mainChatContainer.classList.remove('hidden');
@@ -600,7 +547,6 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         });
         
-        // Hide chat in main window
         mainChatContainer.classList.add('hidden');
         popoutChatBtn.innerHTML = `
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -618,32 +564,33 @@ document.addEventListener('DOMContentLoaded', function() {
     coinCount.querySelector('span').textContent = `${totalCoins} BabaCoins`;
   }
 
-  // Video analysis functions (updated to use Gemini API)
+  // ===== AI VIDEO ANALYSIS FUNCTIONS =====
+  
   function setupVideoAnalysis() {
-    // Setup canvas dimensions once video metadata is loaded
     videoPlayer.addEventListener('loadedmetadata', function() {
       videoFrameCanvas.width = videoPlayer.videoWidth;
       videoFrameCanvas.height = videoPlayer.videoHeight;
     });
     
-    // Start regular analysis
     if (videoAnalysisInterval) {
       clearInterval(videoAnalysisInterval);
     }
     videoAnalysisInterval = setInterval(analyzeVideoFrame, analysisInterval);
     
-    // Do an initial analysis
-    setTimeout(analyzeVideoFrame, 1000);
+    // Initial analysis after 2 seconds
+    setTimeout(analyzeVideoFrame, 2000);
   }
   
   async function analyzeVideoFrame() {
     if (!isPlaying || videoPlayer.paused || videoPlayer.ended) return;
     
     const now = Date.now();
-    if (now - lastAnalysisTime < 5000) return; // Prevent too frequent analysis
+    if (now - lastAnalysisTime < 10000) return; // Minimum 10 seconds between analyses
     lastAnalysisTime = now;
     
     try {
+      console.log('🎥 Capturing video frame for AI analysis...');
+      
       // Draw current video frame to canvas
       videoFrameContext.drawImage(
         videoPlayer, 
@@ -652,82 +599,49 @@ document.addEventListener('DOMContentLoaded', function() {
         videoFrameCanvas.height
       );
       
-      // Convert canvas to data URL
-      const imageDataUrl = videoFrameCanvas.toDataURL('image/jpeg', 0.7);
+      // Convert to base64 JPEG
+      const imageDataUrl = videoFrameCanvas.toDataURL('image/jpeg', 0.8);
+      const base64Image = imageDataUrl.split(',')[1];
       
-      // Send to Gemini AI for analysis
-      const result = await analyzeImageWithGemini(imageDataUrl);
+      console.log('📤 Sending to Gemini AI...');
       
-      // Generate chat messages based on AI analysis
-      if (result) {
-        generateAIResponseMessages(result);
+      // Call Gemini API
+      const messages = await callGeminiAPI(base64Image);
+      
+      if (messages && messages.length > 0) {
+        console.log('✅ AI generated', messages.length, 'chat messages');
+        // Add messages to queue
+        aiMessagesQueue.push(...messages);
       }
     } catch (error) {
-      console.error('Error analyzing video frame:', error);
+      console.error('❌ Error analyzing video frame:', error);
     }
   }
   
-  // Response templates based on what the AI identifies
-  const responseTemplates = {
-    // Objects and items
-    computer: ["Nice setup!", "That computer looks powerful!", "Sweet tech setup there!", "Love that setup!"],
-    phone: ["Is that the new phone?", "Nice phone!", "That phone camera quality looks great!"],
-    game: ["What game is that?", "This game looks fun!", "I love this game!", "Never played this one before!"],
-    code: ["Nice code!", "That's some clean coding!", "Programming stream! Love it!", "What language is that?"],
-    browser: ["Which browser do you prefer?", "Browser looks clean!", "Nice browser setup!"],
-    music: ["Great music choice!", "This song is fire!", "Love this track!", "What's this song?"],
-    
-    // Actions
-    typing: ["Fast typing!", "Those fingers are flying!", "Speed typing master!", "Impressive typing speed!"],
-    clicking: ["Nice clicks!", "Smooth navigation!", "Quick with the mouse!", "Good mouse control!"],
-    scrolling: ["Scrolling through like a pro!", "Fast scrolling!", "Smooth scrolling there!"],
-    streaming: ["Stream quality is great!", "This stream is smooth!", "Great stream setup!", "Professional streaming!"],
-    gaming: ["Nice gameplay!", "Good moves!", "That was smooth!", "Great gaming skills!"],
-    coding: ["Clean code!", "Nice programming!", "That logic looks solid!", "Good coding style!"],
-    
-    // Screen/Interface elements
-    screen: ["Screen looks crisp!", "Nice display quality!", "Clear screen!", "Good resolution!"],
-    window: ["Clean window layout!", "Nice window management!", "Organized desktop!", "Tidy workspace!"],
-    menu: ["Nice menu navigation!", "Smooth menu usage!", "Good interface!", "Clean UI!"],
-    chat: ["Chat is active!", "Love the interaction!", "Great community!", "Active chat today!"],
-    
-    // Colors (simplified responses)
-    blue: ["Love the blue theme!", "Blue looks clean!", "Nice blue colors!", "Blue is my favorite!"],
-    red: ["That red pops!", "Red looks great!", "Nice red accent!", "Bold red choice!"],
-    green: ["Green looks fresh!", "Love the green!", "Nice green theme!", "Green is calming!"],
-    purple: ["Purple looks royal!", "Love that purple!", "Nice purple theme!", "Purple is cool!"],
-    
-    // Moods/Atmosphere
-    professional: ["Very professional!", "Clean and professional!", "Business vibes!", "Professional setup!"],
-    casual: ["Chill vibes!", "Relaxed atmosphere!", "Casual and cool!", "Nice and easy!"],
-    technical: ["Tech vibes!", "Getting technical!", "Nerdy and I love it!", "Tech stuff is cool!"],
-    creative: ["Creative energy!", "Artistic vibes!", "Love the creativity!", "So creative!"],
-    
-    // Fallback responses for unknown items
-    default: [
-      "Interesting!", "Cool stuff!", "Nice!", "That's neat!", "Looking good!",
-      "I see that!", "Neat setup!", "Nice work!", "That's cool!", "Interesting choice!",
-      "Good stuff!", "That looks good!", "Nice touch!", "Cool feature!", "That's handy!"
-    ]
-  };
-
-  async function analyzeImageWithGemini(imageDataUrl) {
+  async function callGeminiAPI(base64Image) {
     try {
-      // Convert data URL to base64 (remove data:image/jpeg;base64, prefix)
-      const base64Image = imageDataUrl.split(',')[1];
-      
       const requestBody = {
         contents: [{
           parts: [
             {
-              text: `Look at this image and identify what you see. Respond with ONLY simple keywords separated by commas. 
-              Focus on: main objects (computer, phone, game, code, browser, music), 
-              actions (typing, clicking, scrolling, streaming, gaming, coding), 
-              interface elements (screen, window, menu, chat),
-              and dominant colors (blue, red, green, purple).
-              
-              Example response: computer, typing, blue, screen
-              Keep it simple - just the main things you notice.`
+              text: `You are watching a live stream. Analyze this frame and generate 2-4 realistic chat messages that viewers might send. 
+
+The messages should be:
+- Natural and conversational (like real viewers commenting)
+- Relevant to what you see in the image
+- Varied (mix of reactions, questions, observations)
+- Short and casual (1-2 sentences each)
+
+Examples of good messages:
+"Is that a new keyboard? Looks nice!"
+"What software are you using for that?"
+"The lighting in your setup is perfect!"
+"I've been wanting to learn this, thanks for showing!"
+
+Format your response as a JSON array of strings, like:
+["message 1", "message 2", "message 3"]
+
+Only return the JSON array, nothing else.`
             },
             {
               inline_data: {
@@ -736,124 +650,75 @@ document.addEventListener('DOMContentLoaded', function() {
               }
             }
           ]
-        }]
+        }],
+        generationConfig: {
+          temperature: 0.9,
+          maxOutputTokens: 200
+        }
       };
 
       const response = await fetch(GEMINI_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-goog-api-key': GEMINI_API_KEY
+          'x-goog-api-key': GEMINI_API_KEY
         },
         body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Gemini API error:', response.status, errorText);
+        return null;
       }
       
       const data = await response.json();
-      const text = data.candidates[0].content.parts[0].text.trim();
       
-      // Parse the simple keyword response
-      const keywords = text.toLowerCase().split(',').map(k => k.trim()).filter(k => k.length > 0);
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        console.error('Invalid API response format:', data);
+        return null;
+      }
       
-      return { keywords };
+      const textResponse = data.candidates[0].content.parts[0].text.trim();
+      console.log('🤖 Gemini response:', textResponse);
+      
+      // Parse the JSON response
+      try {
+        // Remove markdown code blocks if present
+        let jsonText = textResponse;
+        if (jsonText.includes('```json')) {
+          jsonText = jsonText.split('```json')[1].split('```')[0].trim();
+        } else if (jsonText.includes('```')) {
+          jsonText = jsonText.split('```')[1].split('```')[0].trim();
+        }
+        
+        const messages = JSON.parse(jsonText);
+        
+        if (Array.isArray(messages) && messages.length > 0) {
+          return messages;
+        } else {
+          console.warn('AI response was not an array:', messages);
+          return null;
+        }
+      } catch (parseError) {
+        console.error('Failed to parse AI response as JSON:', parseError);
+        console.log('Raw response:', textResponse);
+        
+        // Fallback: try to extract messages from text
+        const lines = textResponse.split('\n').filter(line => line.trim().length > 0);
+        if (lines.length > 0) {
+          return lines.slice(0, 4).map(line => line.replace(/^[-*"'\d.]\s*/, '').replace(/["']$/g, '').trim());
+        }
+        
+        return null;
+      }
     } catch (error) {
-      console.error('Error in Gemini AI analysis:', error);
+      console.error('Error calling Gemini API:', error);
       return null;
     }
   }
-  
-  function generateAIResponseMessages(analysisResult) {
-    if (!analysisResult || !analysisResult.keywords || analysisResult.keywords.length === 0) return;
-    
-    // Pick 1-3 random keywords from the analysis
-    const selectedKeywords = [];
-    const numKeywords = Math.min(analysisResult.keywords.length, Math.floor(Math.random() * 3) + 1);
-    
-    for (let i = 0; i < numKeywords; i++) {
-      const availableKeywords = analysisResult.keywords.filter(k => !selectedKeywords.includes(k));
-      if (availableKeywords.length === 0) break;
-      
-      const randomKeyword = availableKeywords[Math.floor(Math.random() * availableKeywords.length)];
-      selectedKeywords.push(randomKeyword);
-    }
-    
-    // Generate messages based on selected keywords
-    const messages = [];
-    
-    selectedKeywords.forEach(keyword => {
-      const templates = responseTemplates[keyword] || responseTemplates.default;
-      const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
-      messages.push(randomTemplate);
-    });
-    
-    // Send messages with staggered timing
-    messages.forEach((message, index) => {
-      setTimeout(() => {
-        sendAnalysisMessage(message);
-      }, index * 2000); // Stagger by 2 seconds
-    });
-  }
-  
-  function sendAnalysisMessage(messageContent) {
-    // Create a unique username
-    let username;
-    do {
-      username = chatUsernames[Math.floor(Math.random() * chatUsernames.length)];
-    } while (usedNames.has(username) && usedNames.size < chatUsernames.length);
-    usedNames.add(username);
-    
-    // If all names have been used, reset the set
-    if (usedNames.size >= chatUsernames.length * 0.8) {
-      usedNames.clear();
-    }
-    
-    // Create chat message element
-    const messageEl = document.createElement('div');
-    messageEl.className = 'chat-message';
-    
-    // Create avatar
-    const avatarEl = document.createElement('div');
-    avatarEl.className = 'chat-avatar';
-    
-    // Generate a profile picture (SVG avatar)
-    const avatarSVG = generateAvatar(username);
-    avatarEl.innerHTML = avatarSVG;
-    
-    // Create message content
-    const contentEl = document.createElement('div');
-    contentEl.className = 'chat-content';
-    
-    // Create username and message
-    const messageTextEl = document.createElement('div');
-    const usernameEl = document.createElement('span');
-    usernameEl.className = 'chat-username';
-    usernameEl.textContent = username;
-    
-    messageTextEl.appendChild(usernameEl);
-    messageTextEl.appendChild(document.createTextNode(': ' + messageContent));
-    
-    contentEl.appendChild(messageTextEl);
-    
-    // Assemble message
-    messageEl.appendChild(avatarEl);
-    messageEl.appendChild(contentEl);
-    
-    // Add to chat in main window and popped out window if exists
-    chatMessages.appendChild(messageEl);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-    
-    if (isPoppedOut && poppedOutWindow && !poppedOutWindow.closed) {
-      const poppedOutChatMessages = poppedOutWindow.document.getElementById('chat-messages');
-      const clonedMessage = messageEl.cloneNode(true);
-      poppedOutChatMessages.appendChild(clonedMessage);
-      poppedOutChatMessages.scrollTop = poppedOutChatMessages.scrollHeight;
-    }
-  }
 
-  // Window event to cleanup if the main window is closed
+  // Cleanup on window close
   window.addEventListener('beforeunload', function() {
     if (poppedOutWindow && !poppedOutWindow.closed) {
       poppedOutWindow.close();
